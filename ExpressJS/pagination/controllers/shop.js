@@ -1,5 +1,6 @@
 const Product = require('../models/product');
 const Cart=require('../models/cart')
+const Order=require('../models/order')
 
 const items_per_page=1;
 
@@ -100,17 +101,18 @@ exports.postCart =(req, res, next) => {
         return fetchedCart.addProduct(product,{through:{quantity: newQuantity}})
       }
       else{
-        return Product.findByPk(prodId)
+         return Product.findByPk(prodId)
         .then((product)=>{
           return fetchedCart.addProduct(product,{through:{quantity: newQuantity}})
         })
         .catch(err=>{console.log(err)})
       }
-
-  })
+})
+.then(()=>{
+  res.redirect('/cart');
+})
   .catch(err=>{console.log(err)})
 
-  res.redirect('/cart');
 }
 
 exports.postDelete=(req,res,next)=>{
@@ -128,11 +130,48 @@ exports.postDelete=(req,res,next)=>{
 }
 
 exports.getOrders = (req, res, next) => {
-  res.render('shop/orders', {
-    path: '/orders',
-    pageTitle: 'Your Orders'
-  });
+  req.user
+    .getOrders({include: ['products']})
+    .then(orders => {
+      res.render('shop/orders', {
+        path: '/orders',
+        pageTitle: 'Your Orders',
+        orders: orders
+      });
+    })
+    .catch(err => console.log(err));
 };
+
+exports.postOrders=(req, res, next) =>{
+  let total_amount=0;
+  let orderId;
+  let fetchedOrder;
+  req.user.createOrder()
+  .then(order=>{
+      fetchedOrder=order;
+      orderId=order.id
+      return req.user.getCart()
+              .then(cart=>{
+                return cart.getProducts()
+              })
+              .then(products=>{
+                products.forEach((prod)=>{
+                  order.addProduct(prod,{through:{quantity:prod.cartItem.quantity}});
+                  total_amount+=(prod.cartItem.quantity*prod.price)
+                  prod.cartItem.destroy();
+
+                })
+              })
+  })
+  .then(()=>{
+    fetchedOrder.set({amount:total_amount})
+    fetchedOrder.save()
+    res.redirect('/orders')
+  })
+  .catch((err)=>{
+    console.log(err)
+  })
+}
 
 exports.getCheckout = (req, res, next) => {
   res.render('shop/checkout', {
